@@ -36,10 +36,13 @@ pub fn lex_bfs(graph: U32Graph) -> Vec<NodeIndex<u32>> {
     output
 }
 
-// Rose has a *very* interesting definition of a set being smaller
-// First we need to check the lengths and THEN delegate the comparison to BTreeSet
+// Everything that was written here was wrong. It's just standard lexicographical comparsion
+// However, as we've wrapped the indices in Reverse to build a set, we have to undo that
 fn rose_cmp(a: &BTreeSet<Reverse<usize>>, b: &BTreeSet<Reverse<usize>>) -> Ordering {
-    a.len().cmp(&b.len()).then(a.cmp(b))
+    a.iter()
+        .map(|x| x.0)
+        .cmp(b.iter().map(|y| y.0))
+        .then(a.len().cmp(&b.len()))
 }
 
 // A naive implementation of Rose's LexBFS algorithm
@@ -81,7 +84,8 @@ pub fn naive_lex_bfs(graph: U32Graph) -> Vec<i32> {
     output
 }
 
-//Now, we're gonna catch the output from our naive lex-bfs 
+/*
+//Now, we're gonna catch the output from our naive lex-bfs
 //and test if it is a PES (EEP)
 pub fn is_pes(scheme: Vec<i32>, graph: U32Graph) -> bool {
     let answer: bool = false;
@@ -94,6 +98,7 @@ pub fn is_pes(scheme: Vec<i32>, graph: U32Graph) -> bool {
 
     answer
 }
+*/
 
 #[cfg(test)]
 mod tests {
@@ -168,6 +173,9 @@ mod tests {
         graph.add_edge(b, f, 0);
         graph.add_edge(f, c, 0);
         graph.add_edge(c, e, 0);
+
+        graph.add_edge(a, g, 0);
+        graph.add_edge(e, d, 0);
 
         println!("{:?}", graph);
 
