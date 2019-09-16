@@ -1,4 +1,4 @@
-use std::cmp::{Ordering, Reverse};
+use std::cmp::Reverse;
 use std::collections::{BTreeSet, VecDeque};
 use std::iter;
 
@@ -6,6 +6,9 @@ use indexmap::IndexSet;
 
 use petgraph::graph::NodeIndex;
 use petgraph::{Graph, Undirected};
+
+mod common;
+use common::rose_cmp;
 
 type U32Graph = Graph<u32, u32, Undirected>;
 
@@ -34,15 +37,6 @@ pub fn lex_bfs(graph: U32Graph) -> Vec<NodeIndex<u32>> {
     }
 
     output
-}
-
-// Everything that was written here was wrong. It's just standard lexicographical comparsion
-// However, as we've wrapped the indices in Reverse to build a set, we have to undo that
-fn rose_cmp(a: &BTreeSet<Reverse<usize>>, b: &BTreeSet<Reverse<usize>>) -> Ordering {
-    a.iter()
-        .map(|x| x.0)
-        .cmp(b.iter().map(|y| y.0))
-        .then(a.len().cmp(&b.len()))
 }
 
 // A naive implementation of Rose's LexBFS algorithm
