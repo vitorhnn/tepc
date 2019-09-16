@@ -81,6 +81,20 @@ pub fn naive_lex_bfs(graph: U32Graph) -> Vec<i32> {
     output
 }
 
+//Now, we're gonna catch the output from our naive lex-bfs 
+//and test if it is a PES (EEP)
+pub fn is_pes(scheme: Vec<i32>, graph: U32Graph) -> bool {
+    let answer: bool = false;
+    let iterator = scheme.iter();
+
+    for val in iterator {
+        graph.neighbors(NodeIndex::new(*val as usize)).filter(|x|);
+        //ok, i gave up by now, i'm gonna save it and retry later...
+    }
+
+    answer
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
