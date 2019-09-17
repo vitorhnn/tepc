@@ -1,6 +1,5 @@
 use std::cmp::Reverse;
 use std::collections::BTreeSet;
-use std::ops::Deref;
 use std::sync::Arc;
 
 use petgraph::csr::Csr;
@@ -30,7 +29,7 @@ pub fn naive_lex_bfs(graph: Graph) -> Vec<i32> {
             .iter()
             .enumerate()
             .filter(|&(idx, _)| !numbered[idx])
-            .max_by(|&(_, a), &(_, b)| rose_cmp(a.deref(), &*b))
+            .max_by(|&(_, a), &(_, b)| rose_cmp(a, b))
             .expect("output vector was empty");
 
         output[i] = max_set.0 as i32;
@@ -62,7 +61,7 @@ pub fn naive_lex_bfs(graph: Graph) -> Vec<i32> {
                                 .offset(*w as isize);
 
                             (*ptr).insert(Reverse(i));
-                        })
+                        });
                 });
             });
         })
