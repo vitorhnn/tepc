@@ -11,6 +11,7 @@ petgraph = "0.4.13"
 indexmap = "1.1.0"
 num_cpus = "1.10.1"
 crossbeam-utils = "0.6.6"
+rayon = "1.2.0"
 
 [[bin]]
 name = "serial"
@@ -19,3 +20,7 @@ path = "src/serial.rs"
 [[bin]]
 name = "threads"
 path = "src/threads.rs"
+
+[[bin]]
+name = "rayon"
+path = "src/rayon.rs"
