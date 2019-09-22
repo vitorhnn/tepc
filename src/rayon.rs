@@ -1,6 +1,6 @@
 use std::cmp::Reverse;
 use std::collections::BTreeSet;
-use std::pin::Pin;
+use std::ptr::NonNull;
 
 use petgraph::Undirected;
 use petgraph::csr::Csr;
@@ -8,15 +8,19 @@ use petgraph::visit::NodeIndexable;
 
 use rayon::prelude::*;
 
-mod common;
-use common::rose_cmp;
+use crate::common::rose_cmp;
 
 type Graph = Csr<(), (), Undirected>;
+
+struct UnsafeMutPtr<T>(NonNull<T>);
+
+unsafe impl<T> Sync for UnsafeMutPtr<T> {}
+unsafe impl<T> Send for UnsafeMutPtr<T> {}
 
 // A naive implementation of Rose's LexBFS algorithm
 // Not optimal, as the search for an unnumbered vertex with the largest label is O(n) here
 // Thus, this is O(n²), as opposed to O(n) in Rose's paper
-pub fn naive_lex_bfs(graph: Graph) -> Vec<i32> {
+pub fn naive_lex_bfs(graph: &Graph) -> Vec<i32> {
     let n = graph.node_count();
 
     // assigning ∅ to all vertices
@@ -36,19 +40,24 @@ pub fn naive_lex_bfs(graph: Graph) -> Vec<i32> {
             .filter(|&(idx, _)| !numbered[idx])
             .max_by(|&(_, a), &(_, b)| rose_cmp(&a, &b))
             .expect("output vector was empty");
+        
+        let v = max_set.0;
 
         // α(i) = v
-        output[i] = max_set.0 as i32;
+        output[i] = v as i32;
         numbered[max_set.0] = true;
 
         // "update2"
         // afaik optimal
+        let sets_ptr = UnsafeMutPtr(NonNull::new(sets.as_mut_ptr()).unwrap());
+
         graph
-            .neighbors_slice(graph.from_index(max_set.0))
+            .neighbors_slice(graph.from_index(v))
             .par_iter()
             .filter(|&neighbor| !numbered[*neighbor as usize])
-            .for_each(|w| {
-                sets[*w as usize].insert(Reverse(i));
+            .for_each(move |w| unsafe {
+                let ptr = sets_ptr.0.as_ptr();
+                (*ptr.add(*w as usize)).insert(Reverse(i));
             });
     }
 
@@ -75,7 +84,7 @@ mod tests {
 
         println!("{:?}", graph);
 
-        let res = naive_lex_bfs(graph);
+        let res = naive_lex_bfs(&graph);
 
         println!("{:?}", res);
     }
@@ -100,7 +109,7 @@ mod tests {
 
         println!("{:?}", graph);
 
-        let res = naive_lex_bfs(graph);
+        let res = naive_lex_bfs(&graph);
 
         println!("{:?}", res);
     }
@@ -134,10 +143,8 @@ mod tests {
 
         println!("{:?}", graph);
 
-        let res = naive_lex_bfs(graph);
+        let res = naive_lex_bfs(&graph);
 
         println!("{:?}", res);
     }
 }
-
-fn main() {}
