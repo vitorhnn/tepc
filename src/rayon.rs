@@ -2,9 +2,9 @@ use std::cmp::Reverse;
 use std::collections::BTreeSet;
 use std::ptr::NonNull;
 
-use petgraph::Undirected;
 use petgraph::csr::Csr;
 use petgraph::visit::NodeIndexable;
+use petgraph::Undirected;
 
 use rayon::prelude::*;
 
@@ -40,7 +40,7 @@ pub fn naive_lex_bfs(graph: &Graph) -> Vec<i32> {
             .filter(|&(idx, _)| !numbered[idx])
             .max_by(|&(_, a), &(_, b)| rose_cmp(&a, &b))
             .expect("output vector was empty");
-        
+
         let v = max_set.0;
 
         // α(i) = v

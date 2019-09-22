@@ -4,9 +4,9 @@ use std::io::BufReader;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 use tepc::common;
+use tepc::rayon::naive_lex_bfs as rayon;
 use tepc::serial::naive_lex_bfs as serial;
 use tepc::threads::naive_lex_bfs as threaded;
-use tepc::rayon::naive_lex_bfs as rayon;
 
 #[inline(always)]
 pub fn lexbfs_threaded_common(file_name: &str, id: &str, c: &mut Criterion) {
@@ -43,12 +43,20 @@ pub fn lexbfs_benchmark_k10_serial(c: &mut Criterion) {
     lexbfs_serial_common("k10.txt", "serial lexbfs, k10", c);
 }
 
+pub fn lexbfs_benchmark_k10_rayon(c: &mut Criterion) {
+    lexbfs_rayon_common("k10.txt", "rayon lexbfs, k10", c);
+}
+
 pub fn lexbfs_benchmark_k100_threads(c: &mut Criterion) {
     lexbfs_threaded_common("k100.txt", "threaded lexbfs, k100", c);
 }
 
 pub fn lexbfs_benchmark_k100_serial(c: &mut Criterion) {
     lexbfs_serial_common("k100.txt", "serial lexbfs, k100", c);
+}
+
+pub fn lexbfs_benchmark_k100_rayon(c: &mut Criterion) {
+    lexbfs_rayon_common("k100.txt", "rayon lexbfs, k100", c);
 }
 
 pub fn lexbfs_benchmark_k500_threads(c: &mut Criterion) {
@@ -65,13 +73,13 @@ pub fn lexbfs_benchmark_k500_rayon(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    /*
     lexbfs_benchmark_k10_threads,
+    lexbfs_benchmark_k10_rayon,
     lexbfs_benchmark_k10_serial,
     lexbfs_benchmark_k100_threads,
+    lexbfs_benchmark_k100_rayon,
     lexbfs_benchmark_k100_serial,
     lexbfs_benchmark_k500_threads,
-    */
     lexbfs_benchmark_k500_rayon,
     lexbfs_benchmark_k500_serial,
 );

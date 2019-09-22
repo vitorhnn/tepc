@@ -3,11 +3,12 @@ use std::collections::BTreeSet;
 use std::marker::Send;
 use std::ptr::NonNull;
 use std::slice;
-use std::thread;
 
 use petgraph::csr::Csr;
 use petgraph::visit::NodeIndexable;
 use petgraph::Undirected;
+
+use scoped_threadpool::Pool;
 
 use num_cpus;
 
@@ -23,6 +24,7 @@ unsafe impl<T> Send for MutSendable<T> {}
 
 pub fn naive_lex_bfs(graph: &Graph) -> Vec<i32> {
     let cpucount = num_cpus::get();
+    let mut pool = Pool::new(cpucount as u32);
     let n = graph.node_count();
 
     let mut sets: Vec<_> = vec![BTreeSet::new(); n];
@@ -43,14 +45,13 @@ pub fn naive_lex_bfs(graph: &Graph) -> Vec<i32> {
         let neighbors = graph.neighbors_slice(graph.from_index(max_set.0));
         let chunk_size = (neighbors.len() / cpucount) + 1;
 
-        let threads: Vec<_> = neighbors
-            .chunks(chunk_size)
-            .map(|chunk| {
+        pool.scoped(|scope| {
+            neighbors.chunks(chunk_size).for_each(|chunk| {
                 let numbered_ptr = MutSendable(NonNull::new(numbered.as_mut_ptr()).unwrap());
                 let sets_ptr = MutSendable(NonNull::new(sets.as_mut_ptr()).unwrap());
                 let chunk_ptr = Sendable(chunk.as_ptr());
                 let chunk_len = chunk.len();
-                thread::spawn(move || unsafe {
+                scope.execute(move || unsafe {
                     let chunk = slice::from_raw_parts(chunk_ptr.0, chunk_len);
                     chunk
                         .iter()
@@ -63,13 +64,9 @@ pub fn naive_lex_bfs(graph: &Graph) -> Vec<i32> {
 
                             (*ptr).insert(Reverse(i));
                         });
-                })
-            })
-            .collect();
-
-        for thread in threads {
-            thread.join().expect("worker thread failed to join");
-        }
+                });
+            });
+        });
     }
 
     output
