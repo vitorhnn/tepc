@@ -6,21 +6,16 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[dev-dependencies]
+criterion = "0.2"
+
 [dependencies]
 petgraph = "0.4.13"
 indexmap = "1.1.0"
 num_cpus = "1.10.1"
-crossbeam-utils = "0.6.6"
 rayon = "1.2.0"
 
-[[bin]]
-name = "serial"
-path = "src/serial.rs"
-
-[[bin]]
-name = "threads"
-path = "src/threads.rs"
-
-[[bin]]
-name = "rayon"
-path = "src/rayon.rs"
+[[bench]]
+name = "lexbfs_bench"
+path = "benches/lexbfs.rs"
+harness = false
