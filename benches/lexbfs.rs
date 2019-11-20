@@ -39,8 +39,5 @@ pub fn lexbfs(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    lexbfs
-);
+criterion_group!(benches, lexbfs);
 criterion_main!(benches);

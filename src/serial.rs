@@ -1,7 +1,10 @@
 use std::cmp::Reverse;
 use std::collections::BTreeSet;
+use std::collections::HashSet;
 
 use petgraph::csr::Csr;
+use petgraph::visit::EdgeRef;
+use petgraph::visit::IntoEdgeReferences;
 use petgraph::Undirected;
 
 use crate::common::rose_cmp;
@@ -79,21 +82,35 @@ pub fn naive_lex_bfs(graph: &Graph) -> Vec<i32> {
     output
 }
 
-/*
-//Now, we're gonna catch the output from our naive lex-bfs
-//and test if it is a PES (EEP)
-pub fn is_pes(scheme: Vec<i32>, graph: U32Graph) -> bool {
-    let answer: bool = false;
-    let iterator = scheme.iter();
+pub fn complete_graph_edge_count(vertex_count: usize) -> usize {
+    (vertex_count * (vertex_count - 1)) / 2
+}
 
-    for val in iterator {
-        graph.neighbors(NodeIndex::new(*val as usize)).filter(|x|);
-        //ok, i gave up by now, i'm gonna save it and retry later...
+// Now, we're gonna catch the output from our naive lex-bfs
+// and test if it is a PES (EEP)
+pub fn is_pes(scheme: &[i32], graph: Graph) -> bool {
+    for i in 0..scheme.len() {
+        let eliminated_vertices: HashSet<i32> = scheme[..i].iter().cloned().collect();
+
+        // Dividing by two here because petgraph counts inbound and outbound vertices
+        let subgraph_edge_count = graph
+            .edge_references()
+            .filter(|x| {
+                !(eliminated_vertices.contains(&(x.source() as i32))
+                    || eliminated_vertices.contains(&(x.target() as i32)))
+            })
+            .count()
+            / 2;
+
+        if subgraph_edge_count
+            != complete_graph_edge_count(scheme.len() - eliminated_vertices.len())
+        {
+            return false;
+        }
     }
 
-    answer
+    true
 }
-*/
 
 #[cfg(test)]
 mod tests {
@@ -109,15 +126,14 @@ mod tests {
 
         graph.add_edge(a, b, ());
         graph.add_edge(a, c, ());
+        graph.add_edge(a, d, ());
         graph.add_edge(b, c, ());
         graph.add_edge(b, d, ());
         graph.add_edge(c, d, ());
 
-        println!("{:?}", graph);
-
         let res = naive_lex_bfs(&graph);
 
-        println!("{:?}", res);
+        assert_eq!(is_pes(&res, graph), true);
     }
 
     #[test]
