@@ -83,28 +83,37 @@ pub fn naive_lex_bfs(graph: &Graph) -> Vec<i32> {
 }
 
 pub fn complete_graph_edge_count(vertex_count: usize) -> usize {
-    (vertex_count * (vertex_count - 1)) / 2
+    (vertex_count * (vertex_count.saturating_sub(1))) / 2
 }
 
 // Now, we're gonna catch the output from our naive lex-bfs
 // and test if it is a PES (EEP)
 pub fn is_pes(scheme: &[i32], graph: Graph) -> bool {
+    let mut maybe_clique: HashSet<u32> = HashSet::with_capacity(scheme.len());
+    let mut eliminated_vertices: HashSet<u32> = HashSet::with_capacity(scheme.len());
+    let mut neighborhood = HashSet::with_capacity(scheme.len());
     for i in 0..scheme.len() {
-        let eliminated_vertices: HashSet<i32> = scheme[..i].iter().cloned().collect();
+        let eliminated_vertex = scheme[i] as u32;
+        eliminated_vertices.insert(eliminated_vertex);
+
+        neighborhood.extend(graph.neighbors_slice(eliminated_vertex).iter().cloned());
+
+        maybe_clique.clear();
+        maybe_clique.extend(neighborhood.difference(&eliminated_vertices));
+
+        neighborhood.clear();
 
         // Dividing by two here because petgraph counts inbound and outbound vertices
         let subgraph_edge_count = graph
             .edge_references()
             .filter(|x| {
-                !(eliminated_vertices.contains(&(x.source() as i32))
-                    || eliminated_vertices.contains(&(x.target() as i32)))
+                maybe_clique.contains(&(x.source()))
+                    && maybe_clique.contains(&(x.target()))
             })
             .count()
             / 2;
 
-        if subgraph_edge_count
-            != complete_graph_edge_count(scheme.len() - eliminated_vertices.len())
-        {
+        if subgraph_edge_count != complete_graph_edge_count(maybe_clique.len()) {
             return false;
         }
     }
@@ -116,7 +125,7 @@ pub fn is_pes(scheme: &[i32], graph: Graph) -> bool {
 mod tests {
     use super::*;
     #[test]
-    fn diamond_graph() {
+    fn diamond_graph_serial() {
         let mut graph = Csr::new();
 
         let a = graph.add_node(());
@@ -133,11 +142,13 @@ mod tests {
 
         let res = naive_lex_bfs(&graph);
 
+        println!("{:?}", res);
+
         assert_eq!(is_pes(&res, graph), true);
     }
 
     #[test]
-    fn gem_graph() {
+    fn gem_graph_serial() {
         let mut graph = Csr::new();
 
         let a = graph.add_node(());
@@ -159,6 +170,8 @@ mod tests {
         let res = naive_lex_bfs(&graph);
 
         println!("{:?}", res);
+
+        assert_eq!(is_pes(&res, graph), true);
     }
 
     #[test]
@@ -193,5 +206,7 @@ mod tests {
         let res = naive_lex_bfs(&graph);
 
         println!("{:?}", res);
+
+        assert_eq!(is_pes(&res, graph), true);
     }
 }
