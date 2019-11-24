@@ -7,7 +7,7 @@ use petgraph::visit::EdgeRef;
 use petgraph::visit::IntoEdgeReferences;
 use petgraph::Undirected;
 
-use crate::common::rose_cmp;
+use crate::common::{complete_graph_edge_count, rose_cmp};
 
 type Graph = Csr<(), (), Undirected>;
 
@@ -82,18 +82,14 @@ pub fn naive_lex_bfs(graph: &Graph) -> Vec<i32> {
     output
 }
 
-pub fn complete_graph_edge_count(vertex_count: usize) -> usize {
-    (vertex_count * (vertex_count.saturating_sub(1))) / 2
-}
-
 // Now, we're gonna catch the output from our naive lex-bfs
 // and test if it is a PES (EEP)
-pub fn is_pes(scheme: &[i32], graph: Graph) -> bool {
+pub fn is_pes(scheme: &[i32], graph: &Graph) -> bool {
     let mut maybe_clique: HashSet<u32> = HashSet::with_capacity(scheme.len());
     let mut eliminated_vertices: HashSet<u32> = HashSet::with_capacity(scheme.len());
     let mut neighborhood = HashSet::with_capacity(scheme.len());
-    for i in 0..scheme.len() {
-        let eliminated_vertex = scheme[i] as u32;
+    for eliminated_vertex in scheme {
+        let eliminated_vertex = *eliminated_vertex as u32;
         eliminated_vertices.insert(eliminated_vertex);
 
         neighborhood.extend(graph.neighbors_slice(eliminated_vertex).iter().cloned());
@@ -107,8 +103,7 @@ pub fn is_pes(scheme: &[i32], graph: Graph) -> bool {
         let subgraph_edge_count = graph
             .edge_references()
             .filter(|x| {
-                maybe_clique.contains(&(x.source()))
-                    && maybe_clique.contains(&(x.target()))
+                maybe_clique.contains(&(x.source())) && maybe_clique.contains(&(x.target()))
             })
             .count()
             / 2;
@@ -119,6 +114,12 @@ pub fn is_pes(scheme: &[i32], graph: Graph) -> bool {
     }
 
     true
+}
+
+pub fn is_chordal(graph: &Graph) -> bool {
+    let scheme = naive_lex_bfs(&graph);
+
+    is_pes(&scheme, graph)
 }
 
 #[cfg(test)]
@@ -144,7 +145,7 @@ mod tests {
 
         println!("{:?}", res);
 
-        assert_eq!(is_pes(&res, graph), true);
+        assert_eq!(is_pes(&res, &graph), true);
     }
 
     #[test]
@@ -171,7 +172,7 @@ mod tests {
 
         println!("{:?}", res);
 
-        assert_eq!(is_pes(&res, graph), true);
+        assert_eq!(is_pes(&res, &graph), true);
     }
 
     #[test]
@@ -207,6 +208,25 @@ mod tests {
 
         println!("{:?}", res);
 
-        assert_eq!(is_pes(&res, graph), true);
+        assert_eq!(is_pes(&res, &graph), true);
+    }
+
+    #[test]
+    fn not_chordal() {
+        let mut graph = Csr::new();
+
+        let a = graph.add_node(());
+        let b = graph.add_node(());
+        let c = graph.add_node(());
+        let d = graph.add_node(());
+
+        graph.add_edge(a, b, ());
+        graph.add_edge(b, c, ());
+        graph.add_edge(c, d, ());
+        graph.add_edge(d, a, ());
+
+        let res = naive_lex_bfs(&graph);
+
+        assert_eq!(is_pes(&res, &graph), false);
     }
 }

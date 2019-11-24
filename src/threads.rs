@@ -1,18 +1,19 @@
-use std::cmp::Reverse;
-use std::collections::BTreeSet;
+use std::cmp::{Eq, Reverse};
+use std::collections::{BTreeSet, HashSet};
+use std::hash::Hash;
 use std::marker::Send;
 use std::ptr::NonNull;
 use std::slice;
 
 use petgraph::csr::Csr;
-use petgraph::visit::NodeIndexable;
+use petgraph::visit::{EdgeRef, IntoEdgeReferences, NodeIndexable};
 use petgraph::Undirected;
 
 use scoped_threadpool::Pool;
 
-use num_cpus;
+use crossbeam::channel::unbounded;
 
-use crate::common::rose_cmp;
+use crate::common::{complete_graph_edge_count, rose_cmp};
 
 type Graph = Csr<(), (), Undirected>;
 
@@ -22,9 +23,57 @@ struct MutSendable<T>(NonNull<T>);
 unsafe impl<T> Send for Sendable<T> {}
 unsafe impl<T> Send for MutSendable<T> {}
 
-pub fn naive_lex_bfs(graph: &Graph) -> Vec<i32> {
-    let cpucount = num_cpus::get();
-    let mut pool = Pool::new(cpucount as u32);
+fn select2(pool: &mut Pool, sets: &[BTreeSet<Reverse<usize>>], numbered: &Vec<bool>) -> usize {
+    let enumerated: Vec<(usize, &BTreeSet<Reverse<usize>>)> = sets.iter().enumerate().collect();
+    let mut element_count = sets.len();
+
+    // filter
+    let (sender, receiver) = unbounded();
+    let chunk_size = (element_count / pool.thread_count() as usize) + 1;
+    pool.scoped(|scope| {
+        for chunk in enumerated.chunks(chunk_size) {
+            let sender = sender.clone();
+            scope.execute(move || {
+                chunk
+                    .iter()
+                    .filter(|(idx, _)| !numbered[*idx])
+                    .for_each(|&pair| sender.send(pair).unwrap());
+            });
+        }
+    });
+
+    drop(sender);
+
+    let mut res: Vec<(usize, &BTreeSet<Reverse<usize>>)> = receiver.iter().collect();
+
+    // reduce
+    while element_count != 1 {
+        let (sender, receiver) = unbounded();
+        let chunk_size = (element_count / pool.thread_count() as usize).max(2);
+        pool.scoped(|scope| {
+            for chunk in res.chunks(chunk_size) {
+                let sender = sender.clone();
+                scope.execute(move || {
+                    let local_max = chunk
+                        .iter()
+                        .max_by(|(_, a), (_, b)| rose_cmp(a, b))
+                        .unwrap();
+
+                    sender.send(*local_max).unwrap();
+                });
+            }
+        });
+
+        drop(sender);
+        res = receiver.iter().collect();
+
+        element_count = res.len();
+    }
+
+    res[0].0
+}
+
+pub fn naive_lex_bfs(pool: &mut Pool, graph: &Graph) -> Vec<i32> {
     let n = graph.node_count();
 
     let mut sets: Vec<_> = vec![BTreeSet::new(); n];
@@ -32,18 +81,13 @@ pub fn naive_lex_bfs(graph: &Graph) -> Vec<i32> {
     let mut numbered = vec![false; n];
 
     for i in (0..n).rev() {
-        let max_set = sets
-            .iter()
-            .enumerate()
-            .filter(|&(idx, _)| !numbered[idx])
-            .max_by(|&(_, a), &(_, b)| rose_cmp(a, b))
-            .expect("output vector was empty");
+        let max_set = select2(pool, &sets, &numbered);
 
-        output[i] = max_set.0 as i32;
-        numbered[max_set.0] = true;
+        output[i] = max_set as i32;
+        numbered[max_set] = true;
 
-        let neighbors = graph.neighbors_slice(graph.from_index(max_set.0));
-        let chunk_size = (neighbors.len() / cpucount) + 1;
+        let neighbors = graph.neighbors_slice(graph.from_index(max_set));
+        let chunk_size = (neighbors.len() / pool.thread_count() as usize) + 1;
 
         pool.scoped(|scope| {
             neighbors.chunks(chunk_size).for_each(|chunk| {
@@ -72,14 +116,103 @@ pub fn naive_lex_bfs(graph: &Graph) -> Vec<i32> {
     output
 }
 
+fn filter_reduce_edge_count<T, I>(pool: &mut Pool, edges: &[T], maybe_clique: &HashSet<I>) -> usize
+where
+    I: Eq + Hash + Send + Sync,
+    T: EdgeRef<NodeId = I> + Send + Sync,
+{
+    // filter
+    let (sender, receiver) = unbounded();
+    let chunk_size = (edges.len() / pool.thread_count() as usize) + 1;
+    pool.scoped(|scope| {
+        for chunk in edges.chunks(chunk_size) {
+            let sender = sender.clone();
+            scope.execute(move || {
+                chunk
+                    .iter()
+                    .filter(|x| {
+                        maybe_clique.contains(&(x.source())) && maybe_clique.contains(&(x.target()))
+                    })
+                    .for_each(|_| sender.send(1).unwrap());
+            });
+        }
+    });
+
+    drop(sender);
+    let mut res: Vec<usize> = receiver.iter().collect();
+
+    if res.len() == 0 {
+        return 0;
+    }
+
+    while res.len() != 1 {
+        let (sender, receiver) = unbounded();
+        let chunk_size = (res.len() / pool.thread_count() as usize).max(2);
+
+        pool.scoped(|scope| {
+            for chunk in res.chunks(chunk_size) {
+                let sender = sender.clone();
+                scope.execute(move || {
+                    let local_count = chunk.iter().sum();
+
+                    sender.send(local_count).unwrap();
+                });
+            }
+        });
+
+        drop(sender);
+        res = receiver.iter().collect();
+    }
+
+    res[0] / 2
+}
+
+// Now, we're gonna catch the output from our naive lex-bfs
+// and test if it is a PES (EEP)
+pub fn is_pes(pool: &mut Pool, scheme: &[i32], graph: &Graph) -> bool {
+    let mut maybe_clique: HashSet<u32> = HashSet::with_capacity(scheme.len());
+    let mut eliminated_vertices: HashSet<u32> = HashSet::with_capacity(scheme.len());
+    let mut neighborhood = HashSet::with_capacity(scheme.len());
+    let mut edges = Vec::with_capacity(graph.edge_count());
+    for eliminated_vertex in scheme {
+        let eliminated_vertex = *eliminated_vertex as u32;
+        eliminated_vertices.insert(eliminated_vertex);
+
+        neighborhood.extend(graph.neighbors_slice(eliminated_vertex).iter().cloned());
+
+        maybe_clique.clear();
+        maybe_clique.extend(neighborhood.difference(&eliminated_vertices));
+
+        neighborhood.clear();
+
+        edges.clear();
+        edges.extend(graph.edge_references());
+
+        let subgraph_edge_count = filter_reduce_edge_count(pool, &edges, &maybe_clique);
+
+        if subgraph_edge_count != complete_graph_edge_count(maybe_clique.len()) {
+            return false;
+        }
+    }
+
+    true
+}
+
+pub fn is_chordal(pool: &mut Pool, graph: &Graph) -> bool {
+    let scheme = naive_lex_bfs(pool, &graph);
+
+    is_pes(pool, &scheme, graph)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common;
-    use std::fs::File;
-    use std::io::BufReader;
+
     #[test]
-    fn diamond_graph() {
+    fn diamond_graph_threads() {
+        let cpucount = num_cpus::get();
+        let mut pool = Pool::new(cpucount as u32);
+
         let mut graph = Graph::new();
 
         let a = graph.add_node(());
@@ -96,13 +229,18 @@ mod tests {
 
         println!("{:?}", graph);
 
-        let res = naive_lex_bfs(&graph);
+        let res = naive_lex_bfs(&mut pool, &graph);
 
         println!("{:?}", res);
+
+        assert_eq!(is_pes(&mut pool, &res, &graph), true);
     }
 
     #[test]
     fn gem_graph() {
+        let cpucount = num_cpus::get();
+        let mut pool = Pool::new(cpucount as u32);
+
         let mut graph = Graph::new();
 
         let a = graph.add_node(());
@@ -121,13 +259,18 @@ mod tests {
 
         println!("{:?}", graph);
 
-        let res = naive_lex_bfs(&graph);
+        let res = naive_lex_bfs(&mut pool, &graph);
 
         println!("{:?}", res);
+
+        assert_eq!(is_pes(&mut pool, &res, &graph), true);
     }
 
     #[test]
     fn long_chordal() {
+        let cpucount = num_cpus::get();
+        let mut pool = Pool::new(cpucount as u32);
+
         let mut graph = Graph::new();
 
         let a = graph.add_node(());
@@ -155,21 +298,10 @@ mod tests {
 
         println!("{:?}", graph);
 
-        let res = naive_lex_bfs(&graph);
+        let res = naive_lex_bfs(&mut pool, &graph);
 
         println!("{:?}", res);
-    }
 
-    #[test]
-    fn from_file() {
-        let file = File::open("k500.txt").unwrap();
-
-        let graph = common::graph_from_reader(BufReader::new(file)).unwrap();
-
-        println!("{:?}", graph);
-
-        let res = naive_lex_bfs(&graph);
-
-        println!("{:?}", res);
+        assert_eq!(is_pes(&mut pool, &res, &graph), true);
     }
 }

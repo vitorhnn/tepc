@@ -15,6 +15,10 @@ pub fn rose_cmp(a: &BTreeSet<Reverse<usize>>, b: &BTreeSet<Reverse<usize>>) -> O
         .then(a.len().cmp(&b.len()))
 }
 
+pub fn complete_graph_edge_count(vertex_count: usize) -> usize {
+    (vertex_count * (vertex_count.saturating_sub(1))) / 2
+}
+
 pub fn graph_from_reader(reader: impl BufRead) -> Result<Csr<(), (), Undirected>, Box<dyn Error>> {
     let mut edges = HashSet::new();
     let mut node_count = 0;
